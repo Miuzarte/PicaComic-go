@@ -2,6 +2,7 @@ package PicaComic
 
 import (
 	"context"
+	"iter"
 	"net/http"
 	"path"
 	"strconv"
@@ -82,98 +83,74 @@ var (
 	}
 )
 
-type SignInResp struct {
-	Token string `json:"token"`
+var authorization = ""
+
+func SetToken(token string) {
+	authorization = token
 }
 
-func SignIn(ctx context.Context, email, password string) (*http.Response, *SignInResp, error) {
+var threads = 4 // 下载并发数
+
+// SetThreads 设置下载并发数
+func SetThreads(n int) {
+	if n <= 0 {
+		n = 1
+	}
+	threads = n
+}
+
+// SetUseEnvProxy 设置是否使用系统环境变量中的代理
+//
+// 默认为 true
+func SetUseEnvProxy(b bool) {
+	ht := httpClient.Transport.(*http.Transport)
+	if b {
+		ht.Proxy = http.ProxyFromEnvironment
+	} else {
+		ht.Proxy = nil
+	}
+}
+
+func SignIn(ctx context.Context, email, password string) (*SignInResp, error) {
 	u := toUrl(API_URL)
 	u.Path = API_AUTH_SIGNIN
-	return decodeTo[SignInResp](DoApi(ctx,
+	resp, err := doApiAndDecodeTo[SignInResp](ctx,
 		http.MethodPost,
 		u.String(),
 		map[string]string{
 			"email":    email,
 			"password": password,
 		},
-	))
+	)
+	if err == nil && resp.Token != "" {
+		authorization = resp.Token
+	}
+	return resp, err
 }
 
-type Stats struct {
-	Total int `json:"total"` // 总数
-	Limit int `json:"limit"` // 返回数 == len(.Docs)
-	Pages int `json:"pages"` // 共几页
-	Page  int `json:"page"`  // 第几页
-}
-
-// maybe[TODO] 合并所有的 XxxComic struct
-
-type SearchComic struct { // 14
-	UpdatedAt   string   `json:"updated_at"`
-	Thumb       Image    `json:"thumb"`
-	Author      string   `json:"author"`
-	Description string   `json:"description"`
-	ChineseTeam string   `json:"chineseTeam"`
-	CreatedAt   string   `json:"created_at"`
-	Finished    bool     `json:"finished"`
-	TotalViews  int      `json:"totalViews"`
-	Categories  []string `json:"categories"`
-	TotalLikes  int      `json:"totalLikes"`
-	Title       string   `json:"title"`
-	Tags        []string `json:"tags"`
-	Id          string   `json:"_id"`
-	LikesCount  int      `json:"likesCount"`
-}
-
-type SearchResp struct {
-	Comics struct {
-		Docs  []SearchComic `json:"docs"`
-		Stats `json:",squash"`
-	} `json:"comics"`
-}
-
-func Search(ctx context.Context, keyword string, categories []string, sort Sort, page int) (*http.Response, *SearchResp, error) {
+func Search(ctx context.Context, keyword string, categories []string, sort Sort, page int) (*SearchResp, error) {
 	if sort == "" {
 		sort = ORDER_DEFAULT
 	}
-	page = min(page, 1)
+	page = max(page, 1)
 
 	u := toUrl(API_URL)
 	u.Path = API_COMICS_SEARCH
 	q := u.Query()
 	q.Add("page", strconv.Itoa(page))
 	u.RawQuery = q.Encode()
-	return decodeTo[SearchResp](DoApi(ctx, http.MethodPost, u.String(), map[string]any{
-		"keyword":    keyword,
-		"categories": categories,
-		"sort":       sort,
-	}))
+	return doApiAndDecodeTo[SearchResp](ctx,
+		http.MethodPost,
+		u.String(),
+		map[string]any{
+			"keyword":    keyword,
+			"categories": categories,
+			"sort":       sort,
+		},
+	)
 }
 
-type Comic struct { // 13
-	UnderlineId string   `json:"_id"` // == .Id
-	Title       string   `json:"title"`
-	Author      string   `json:"author"`
-	TotalViews  int      `json:"totalViews"`
-	TotalLikes  int      `json:"totalLikes"`
-	PagesCount  int      `json:"pagesCount"`
-	EpsCount    int      `json:"epsCount"`
-	Finished    bool     `json:"finished"`
-	Categories  []string `json:"categories"`
-	Tags        []string `json:"tags"`
-	Thumb       Image    `json:"thumb"`
-	Id          string   `json:"id"`
-	LikesCount  int      `json:"likesCount"`
-}
-
-type ComicsResp struct {
-	Comics struct {
-		Docs  []Comic `json:"docs"`
-		Stats `json:",squash"`
-	} `json:"comics"`
-}
-
-func Comics(ctx context.Context, block, tag string, order Sort, page int) (*http.Response, *ComicsResp, error) {
+func Comics(ctx context.Context, block, tag string, order Sort, page int) (*ComicsResp, error) {
 	u := toUrl(API_URL)
 	u.Path = API_COMICS
 	q := u.Query()
@@ -190,272 +167,104 @@ func Comics(ctx context.Context, block, tag string, order Sort, page int) (*http
 		q.Add("page", strconv.Itoa(page))
 	}
 	u.RawQuery = q.Encode()
-	return decodeTo[ComicsResp](DoApi(ctx, http.MethodGet, u.String(), nil))
+	return doApiAndDecodeTo[ComicsResp](ctx, http.MethodGet, u.String(), nil)
 }
 
-type User struct {
-	Id         string   `json:"_id"`
-	Gender     string   `json:"gender"` // "m" | "f"?
-	Name       string   `json:"name"`
-	Title      string   `json:"title"` // "WANDANCE"
-	Verified   bool     `json:"verified"`
-	Exp        int      `json:"exp"`
-	Level      int      `json:"level"`
-	Characters []string `json:"characters"` // "knight", "vip", "single_doc", "tool_man"
-	Role       string   `json:"role"`       // "knight"
-	Avatar     Image    `json:"avatar"`
-	Slogan     string   `json:"slogan"` // 签名
-
-	// Character string `json:"character"` // [CommentsResp] constant url, ad?
-}
-
-type DetailComic struct { // 24
-	Id      string `json:"_id"`
-	Creator User   `json:"creator"`
-
-	Title       string   `json:"title"`
-	Description string   `json:"description"`
-	Thumb       Image    `json:"thumb"`
-	Author      string   `json:"author"`
-	ChineseTeam string   `json:"chineseTeam"`
-	Categories  []string `json:"categories"`
-	Tags        []string `json:"tags"`
-	PagesCount  int      `json:"pagesCount"`
-	EpsCount    int      `json:"epsCount"`
-	Finished    bool     `json:"finished"`
-
-	UpdatedAt string `json:"updated_at"` // "2025-11-01T17:30:24.731Z"
-	CreatedAt string `json:"created_at"` // "2025-05-19T11:34:55.755Z"
-
-	AllowDownload bool `json:"allowDownload"`
-	AllowComment  bool `json:"allowComment"`
-
-	TotalLikes    int `json:"totalLikes"`
-	TotalViews    int `json:"totalViews"`
-	TotalComments int `json:"totalComments"`
-	ViewsCount    int `json:"viewsCount"`
-	LikesCount    int `json:"likesCount"`
-	CommentsCount int `json:"commentsCount"`
-
-	IsFavourite bool `json:"isFavourite"`
-	IsLiked     bool `json:"isLiked"`
-}
-
-type ComicInfoResp struct {
-	Comic DetailComic `json:"comic"`
-}
-
-func ComicInfo(ctx context.Context, bookId string) (*http.Response, *ComicInfoResp, error) {
+func ComicInfo(ctx context.Context, bookId string) (*ComicInfoResp, error) {
 	u := toUrl(API_URL)
 	u.Path = path.Join(API_COMICS, bookId)
-	return decodeTo[ComicInfoResp](DoApi(ctx, http.MethodGet, u.String(), nil))
+	return doApiAndDecodeTo[ComicInfoResp](ctx, http.MethodGet, u.String(), nil)
 }
 
-type Episode struct {
-	UnderlineId string `json:"_id"`
-	Title       string `json:"title"`
-	Order       int    `json:"order"`      // Docs 中从大到小排序
-	UpdatedAt   string `json:"updated_at"` // "2025-11-01T11:46:55.870Z"
-	Id          string `json:"id"`
-}
-
-type EpsResp struct {
-	Eps struct {
-		Docs  []Episode `json:"docs"`
-		Stats `json:",squash"`
-	} `json:"eps"`
-}
-
-func Episodes(ctx context.Context, bookId string, page int) (*http.Response, *EpsResp, error) {
-	page = min(page, 1)
+func Episodes(ctx context.Context, bookId string, page int) (*EpsResp, error) {
+	page = max(page, 1)
 
 	u := toUrl(API_URL)
 	u.Path = path.Join(API_COMICS, bookId, "eps")
 	q := u.Query()
 	q.Add("page", strconv.Itoa(page))
 	u.RawQuery = q.Encode()
-	return decodeTo[EpsResp](DoApi(ctx, http.MethodGet, u.String(), nil))
+	return doApiAndDecodeTo[EpsResp](ctx, http.MethodGet, u.String(), nil)
 }
 
-type PageDoc struct {
-	UnderlineId string `json:"_id"`
-	Media       Image  `json:"media"`
-	Id          string `json:"id"`
-}
-
-type PagesResp struct {
-	Pages struct {
-		Docs  []PageDoc `json:"docs"`
-		Stats `json:",squash"`
-	} `json:"pages"`
-	Ep struct {
-		Id    string `json:"_id"`
-		Title string `json:"title"`
-	} `json:"ep"`
-}
-
-func Pages(ctx context.Context, bookId string, epId, page int) (*http.Response, *PagesResp, error) {
-	epId = min(epId, 1)
-	page = min(page, 1)
+func Pages(ctx context.Context, bookId string, epId, page int) (*PagesResp, error) {
+	epId = max(epId, 1)
+	page = max(page, 1)
 
 	u := toUrl(API_URL)
 	u.Path = path.Join(API_COMICS, bookId, "order", strconv.Itoa(epId))
 	q := u.Query()
 	q.Add("page", strconv.Itoa(page))
 	u.RawQuery = q.Encode()
-	return decodeTo[PagesResp](DoApi(ctx, http.MethodGet, u.String(), nil))
-}
-
-type RecommendationComic struct { // 9
-	Id         string   `json:"_id"`
-	Title      string   `json:"title"`
-	Author     string   `json:"author"`
-	PagesCount int      `json:"pagesCount"`
-	EpsCount   int      `json:"epsCount"`
-	Finished   bool     `json:"finished"`
-	Categories []string `json:"categories"`
-	Thumb      Image    `json:"thumb"`
-	LikesCount int      `json:"likesCount"`
-}
-
-type RecommendationResp struct {
-	Comics []RecommendationComic
+	return doApiAndDecodeTo[PagesResp](ctx, http.MethodGet, u.String(), nil)
 }
 
 // Recommendation 看了這本子的人也在看
-func Recommendation(ctx context.Context, bookId string) (*http.Response, *RecommendationResp, error) {
+func Recommendation(ctx context.Context, bookId string) (*RecommendationResp, error) {
 	u := toUrl(API_URL)
 	u.Path = path.Join(API_COMICS, bookId, "recommendation")
-	return decodeTo[RecommendationResp](DoApi(ctx, http.MethodGet, u.String(), nil))
-}
-
-type CommentDoc struct {
-	UnderlineId   string `json:"_id"`
-	Content       string `json:"content"`
-	User          User   `json:"_user"`
-	Id            string `json:"id"`
-	LikesCount    int    `json:"likes_count"`
-	CommentsCount int    `json:"comments_count"`
-	IsLiked       bool   `json:"is_liked"`
-}
-
-type CommentsResp struct {
-	Comments struct {
-		Docs  []CommentDoc `json:"docs"`
-		Stats `json:",squash"`
-		// Page int `json:"page"` // raw string, weakly decode to int
-	} `json:"comments"`
+	return doApiAndDecodeTo[RecommendationResp](ctx, http.MethodGet, u.String(), nil)
 }
 
 // Comments 偉論
-func Comments(ctx context.Context, bookId string, page int) (*http.Response, *CommentsResp, error) {
-	page = min(page, 1)
+func Comments(ctx context.Context, bookId string, page int) (*CommentsResp, error) {
+	page = max(page, 1)
 
 	u := toUrl(API_URL)
 	u.Path = path.Join(API_COMICS, bookId, "comments")
 	q := u.Query()
 	q.Add("page", strconv.Itoa(page))
 	u.RawQuery = q.Encode()
-	return decodeTo[CommentsResp](DoApi(ctx, http.MethodGet, u.String(), nil))
-}
-
-type LikeResp struct {
-	Action string `json:"action"` // "like" | "unlike"
+	return doApiAndDecodeTo[CommentsResp](ctx, http.MethodGet, u.String(), nil)
 }
 
 // Like 讚好
-func Like(ctx context.Context, bookId string) (*http.Response, *LikeResp, error) {
+func Like(ctx context.Context, bookId string) (*LikeResp, error) {
 	u := toUrl(API_URL)
 	u.Path = path.Join(API_COMICS, bookId, "like")
-	return decodeTo[LikeResp](DoApi(ctx, http.MethodPost, u.String(), nil))
-}
-
-type FavouriteResp struct {
-	Action string `json:"action"` // "favourite" | "un_favourite"
+	return doApiAndDecodeTo[LikeResp](ctx, http.MethodPost, u.String(), nil)
 }
 
 // Favourite 收藏
-func Favourite(ctx context.Context, bookId string) (*http.Response, *FavouriteResp, error) {
+func Favourite(ctx context.Context, bookId string) (*FavouriteResp, error) {
 	u := toUrl(API_URL)
 	u.Path = path.Join(API_COMICS, bookId, "favourite")
-	return decodeTo[FavouriteResp](DoApi(ctx, http.MethodPost, u.String(), nil))
-}
-
-type KeywordsResp struct {
-	Keywords []string `json:"keywords"`
+	return doApiAndDecodeTo[FavouriteResp](ctx, http.MethodPost, u.String(), nil)
 }
 
 // Keywords 紳士都在搜的關鍵字
-func Keywords(ctx context.Context) (*http.Response, *KeywordsResp, error) {
+func Keywords(ctx context.Context) (*KeywordsResp, error) {
 	u := toUrl(API_URL)
 	u.Path = API_KEYWORDS
-	return decodeTo[KeywordsResp](DoApi(ctx, http.MethodGet, u.String(), nil))
-}
-
-type CategoryBase struct {
-	Title string `json:"title"`
-	Thumb Image  `json:"thumb"`
-}
-
-type CategoryLink struct {
-	Link   string `json:"link"` // "" if !.IsWeb
-	IsWeb  bool   `json:"isWeb"`
-	Active bool   `json:"active"` // always true
-}
-
-type CategoryTag struct {
-	Id          string `json:"_id"`
-	Description string `json:"description"`
-}
-
-type CategoriesResp struct {
-	Categories []struct {
-		CategoryBase
-		CategoryLink
-		CategoryTag
-	}
+	return doApiAndDecodeTo[KeywordsResp](ctx, http.MethodGet, u.String(), nil)
 }
 
 // Categories 熱門分類
-func Categories(ctx context.Context) (*http.Response, *CategoriesResp, error) {
+func Categories(ctx context.Context) (*CategoriesResp, error) {
 	u := toUrl(API_URL)
 	u.Path = API_CATEGORIES
-	return decodeTo[CategoriesResp](DoApi(ctx, http.MethodGet, u.String(), nil))
-}
-
-type UserFavouriteComic struct { // 12
-	Id         string   `json:"_id"`
-	Title      string   `json:"title"`
-	Author     string   `json:"author"`
-	TotalViews int      `json:"totalViews"`
-	TotalLikes int      `json:"totalLikes"`
-	PagesCount int      `json:"pagesCount"`
-	EpsCount   int      `json:"epsCount"`
-	Finished   bool     `json:"finished"`
-	Categories []string `json:"categories"`
-	Tags       []string `json:"tags"`
-	Thumb      Image    `json:"thumb"`
-	LikesCount int      `json:"likesCount"`
-}
-
-type UserFavouriteResp struct {
-	Comics struct {
-		Docs  []UserFavouriteComic `json:"docs"`
-		Stats `json:",squash"`
-	}
+	return doApiAndDecodeTo[CategoriesResp](ctx, http.MethodGet, u.String(), nil)
 }
 
 // UserFavourite 已收藏
-func UserFavourite(ctx context.Context, sort Sort, page int) (*http.Response, *UserFavouriteResp, error) {
+func UserFavourite(ctx context.Context, sort Sort, page int) (*UserFavouriteResp, error) {
 	if sort == "" {
 		sort = ORDER_DEFAULT
 	}
-	page = min(page, 1)
+	page = max(page, 1)
 
 	u := toUrl(API_URL)
 	u.Path = API_USERS_FAVOURITE
 	q := u.Query()
 	q.Add("page", strconv.Itoa(page))
 	u.RawQuery = q.Encode()
-	return decodeTo[UserFavouriteResp](DoApi(ctx, http.MethodGet, u.String(), nil))
+	return doApiAndDecodeTo[UserFavouriteResp](ctx, http.MethodGet, u.String(), nil)
+}
+
+func DownloadCoversIter(ctx context.Context, search *SearchResp) iter.Seq2[Image, error] {
+	return newDownloader(ctx, newCoversDownload(search)).downloadIter()
+}
+
+func DownloadPagesIter(ctx context.Context, pages *PagesResp) iter.Seq2[Image, error] {
+	return newDownloader(ctx, newPagesDownload(pages)).downloadIter()
 }

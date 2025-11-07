@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -19,10 +20,22 @@ import (
 	"github.com/Miuzarte/PicaComic-go/internal/constant"
 )
 
-var authorization = ""
-
-func SetToken(token string) {
-	authorization = token
+var httpClient = http.Client{
+	Transport: &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: func(dialer *net.Dialer) func(context.Context, string, string) (net.Conn, error) {
+			return dialer.DialContext
+		}(&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}),
+		DisableCompression:    true, // disable gzip
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	},
 }
 
 type BaseResp struct {
@@ -31,7 +44,7 @@ type BaseResp struct {
 	Data    map[string]any `json:"data"` // delay decode using [mapstructure.Decode]
 }
 
-func DoApi(ctx context.Context, method string, url string, body any) (*http.Response, error) {
+func DoApi(ctx context.Context, method string, url string, body any) (*http.Response, []byte, error) {
 	const (
 		nonce     = "b1ab87b4800d4d4590a11701b8551afa"
 		apiKey    = "C69BAF41DA5ABD1FFEDC6D2FEA56B"
@@ -57,14 +70,14 @@ func DoApi(ctx context.Context, method string, url string, body any) (*http.Resp
 		default:
 			b, err := json.Marshal(v)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			bodyReader = bytes.NewReader(b)
 		}
 	}
 	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for k, v := range constant.Header {
 		req.Header.Set(k, v)
@@ -75,32 +88,50 @@ func DoApi(ctx context.Context, method string, url string, body any) (*http.Resp
 		req.Header.Set("authorization", authorization)
 	}
 
-	return http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return resp, b, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return resp, b, fmt.Errorf("DoApi: bad http status code: %s", resp.Status)
+	}
+	return resp, b, nil
 }
 
-type Image struct {
+type ImageInfo struct {
 	FileServer   string `json:"fileServer"`
 	OriginalName string `json:"originalName"`
 	Path         string `json:"path"`
 }
 
-func (i *Image) Download(ctx context.Context) (resp *http.Response, body []byte, err error) {
-	u, err := url.Parse(i.FileServer)
-	if err != nil {
-		return nil, nil, err
-	}
-	if strings.Contains(u.Path, "static") {
-		u.Path = path.Join(u.Path, i.Path)
-	} else {
-		u.Path = path.Join(u.Path, IMG_STATIC, i.Path)
-	}
+func (i ImageInfo) String() string {
+	return i.OriginalName + ": " + i.Url().String()
+}
 
-	// 图片下载不需要鉴权
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+func (i ImageInfo) Url() *url.URL {
+	u, _ := url.Parse(i.FileServer)
+	if u.Path == "" {
+		u.Path = "/"
+	}
+	if !strings.Contains(u.Path, IMG_STATIC) {
+		u.Path = path.Join(u.Path, IMG_STATIC, i.Path)
+	} else {
+		u.Path = path.Join(u.Path, i.Path)
+	}
+	return u
+}
+
+func (i ImageInfo) Download(ctx context.Context) (resp *http.Response, body []byte, err error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, i.Url().String(), nil)
 	if err != nil {
 		return nil, nil, err
 	}
-	resp, err = http.DefaultClient.Do(req)
+	resp, err = httpClient.Do(req)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -110,7 +141,7 @@ func (i *Image) Download(ctx context.Context) (resp *http.Response, body []byte,
 		return resp, body, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return resp, body, fmt.Errorf("Image.Download: bad http status code: %s", resp.Status)
+		return resp, body, fmt.Errorf("ImageInfo.Download: bad http status code: %s", resp.Status)
 	}
 	return resp, body, nil
 }

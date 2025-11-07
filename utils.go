@@ -1,29 +1,33 @@
 package PicaComic
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 
 	"github.com/go-viper/mapstructure/v2"
 )
 
-func decodeTo[T any](resp *http.Response, err error) (*http.Response, *T, error) {
+func doApiAndDecodeTo[T any](ctx context.Context, method string, url string, body any) (*T, error) {
+	_, b, err := DoApi(ctx, method, url, body)
 	if err != nil {
-		return resp, nil, err
+		return nil, err
 	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
+	fmt.Println(string(b))
+	t, err := decodeTo[T](b)
 	if err != nil {
-		return resp, nil, err
+		return nil, err
 	}
+	return t, nil
+}
 
+func decodeTo[T any](body []byte) (*T, error) {
 	input := BaseResp{}
-	err = json.Unmarshal(data, &input)
+	err := json.Unmarshal(body, &input)
 	if err != nil {
-		return resp, nil, err
+		return nil, err
 	}
 
 	output := new(T)
@@ -31,7 +35,7 @@ func decodeTo[T any](resp *http.Response, err error) (*http.Response, *T, error)
 	// if rv.IsValid() && rv.Kind() == reflect.Struct {
 	// 	fv := rv.FieldByName("Todo")
 	// 	if fv.IsValid() && fv.CanSet() {
-	// 		fv.SetBytes(data)
+	// 		fv.SetBytes(body)
 	// 		return resp, output, nil
 	// 	}
 	// }
@@ -49,13 +53,13 @@ func decodeTo[T any](resp *http.Response, err error) (*http.Response, *T, error)
 
 	// 避免被 decode err 覆盖
 	if input.Code != http.StatusOK {
-		return resp, output, fmt.Errorf("api response bad status code: %d, %s", input.Code, input.Message)
+		return output, fmt.Errorf("api response bad status code: %d, %s", input.Code, input.Message)
 	}
 	if err != nil {
-		return resp, output, err
+		return output, err
 	}
 
-	return resp, output, nil
+	return output, nil
 }
 
 func toUrl(u string) *url.URL {
