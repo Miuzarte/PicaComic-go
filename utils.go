@@ -15,7 +15,6 @@ func doApiAndDecodeTo[T any](ctx context.Context, method string, url string, bod
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println(string(b))
 	t, err := decodeTo[T](b)
 	if err != nil {
 		return nil, err

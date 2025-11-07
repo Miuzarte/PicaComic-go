@@ -37,6 +37,10 @@ type SearchResp struct {
 	} `json:"comics"`
 }
 
+func (sr0 *SearchResp) append(sr1 *SearchResp) {
+	sr0.Comics.Docs = append(sr0.Comics.Docs, sr1.Comics.Docs...)
+}
+
 type Comic struct { // 13
 	UnderlineId string    `json:"_id"` // == .Id
 	Title       string    `json:"title"`
@@ -58,6 +62,10 @@ type ComicsResp struct {
 		Docs  []Comic `json:"docs"`
 		Stats `json:",squash"`
 	} `json:"comics"`
+}
+
+func (cr0 *ComicsResp) append(cr1 *ComicsResp) {
+	cr0.Comics.Docs = append(cr0.Comics.Docs, cr1.Comics.Docs...)
 }
 
 type User struct {
@@ -127,6 +135,10 @@ type EpsResp struct {
 	} `json:"eps"`
 }
 
+func (er0 *EpsResp) append(er1 *EpsResp) {
+	er0.Eps.Docs = append(er0.Eps.Docs, er1.Eps.Docs...)
+}
+
 type PageDoc struct {
 	UnderlineId string    `json:"_id"`
 	Media       ImageInfo `json:"media"`
@@ -142,6 +154,10 @@ type PagesResp struct {
 		Id    string `json:"_id"`
 		Title string `json:"title"`
 	} `json:"ep"`
+}
+
+func (pr0 *PagesResp) append(pr1 *PagesResp) {
+	pr0.Pages.Docs = append(pr0.Pages.Docs, pr1.Pages.Docs...)
 }
 
 type RecommendationComic struct { // 9
@@ -176,6 +192,10 @@ type CommentsResp struct {
 		Stats `json:",squash"`
 		// Page int `json:"page"` // raw string, weakly decode to int
 	} `json:"comments"`
+}
+
+func (cr0 *CommentsResp) append(cr1 *CommentsResp) {
+	cr0.Comments.Docs = append(cr0.Comments.Docs, cr1.Comments.Docs...)
 }
 
 type LikeResp struct {
@@ -234,4 +254,8 @@ type UserFavouriteResp struct {
 		Docs  []UserFavouriteComic `json:"docs"`
 		Stats `json:",squash"`
 	}
+}
+
+func (ufr0 *UserFavouriteResp) append(ufr1 *UserFavouriteResp) {
+	ufr0.Comics.Docs = append(ufr0.Comics.Docs, ufr1.Comics.Docs...)
 }

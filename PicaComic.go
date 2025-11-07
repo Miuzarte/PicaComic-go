@@ -2,6 +2,7 @@ package PicaComic
 
 import (
 	"context"
+	"fmt"
 	"iter"
 	"net/http"
 	"path"
@@ -128,17 +129,19 @@ func SignIn(ctx context.Context, email, password string) (*SignInResp, error) {
 	return resp, err
 }
 
-func Search(ctx context.Context, keyword string, categories []string, sort Sort, page int) (*SearchResp, error) {
+func Search(ctx context.Context, keyword string, categories []string, sort Sort, page uint) (*SearchResp, error) {
 	if sort == "" {
 		sort = ORDER_DEFAULT
 	}
-	page = max(page, 1)
+	p := max(page, 1)
 
 	u := toUrl(API_URL)
 	u.Path = API_COMICS_SEARCH
+
 	q := u.Query()
-	q.Add("page", strconv.Itoa(page))
+	q.Add("page", strconv.Itoa(int(p)))
 	u.RawQuery = q.Encode()
+
 	return doApiAndDecodeTo[SearchResp](ctx,
 		http.MethodPost,
 		u.String(),
@@ -150,23 +153,25 @@ func Search(ctx context.Context, keyword string, categories []string, sort Sort,
 	)
 }
 
-func Comics(ctx context.Context, block, tag string, order Sort, page int) (*ComicsResp, error) {
+func Comics(ctx context.Context, block, tag string, sort Sort, page uint) (*ComicsResp, error) {
+	p := max(page, 1)
+
 	u := toUrl(API_URL)
 	u.Path = API_COMICS
+
 	q := u.Query()
+	q.Add("page", strconv.Itoa(int(p)))
 	if block != "" {
 		q.Add("c", block)
 	}
 	if tag != "" {
 		q.Add("t", tag)
 	}
-	if order != "" {
-		q.Add("s", order)
-	}
-	if page > 0 {
-		q.Add("page", strconv.Itoa(page))
+	if sort != "" {
+		q.Add("s", sort)
 	}
 	u.RawQuery = q.Encode()
+
 	return doApiAndDecodeTo[ComicsResp](ctx, http.MethodGet, u.String(), nil)
 }
 
@@ -176,27 +181,75 @@ func ComicInfo(ctx context.Context, bookId string) (*ComicInfoResp, error) {
 	return doApiAndDecodeTo[ComicInfoResp](ctx, http.MethodGet, u.String(), nil)
 }
 
+// Episodes 获取章节列表, page 可为 -1
 func Episodes(ctx context.Context, bookId string, page int) (*EpsResp, error) {
 	page = max(page, 1)
 
 	u := toUrl(API_URL)
 	u.Path = path.Join(API_COMICS, bookId, "eps")
+
 	q := u.Query()
 	q.Add("page", strconv.Itoa(page))
 	u.RawQuery = q.Encode()
-	return doApiAndDecodeTo[EpsResp](ctx, http.MethodGet, u.String(), nil)
+
+	resp, err := doApiAndDecodeTo[EpsResp](ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if page == -1 {
+		for page := 2; page <= resp.Eps.Pages; page++ {
+			r, err := Episodes(ctx, bookId, page)
+			if err != nil {
+				return resp, err
+			}
+			resp.append(r)
+		}
+		resp.Eps.Limit = len(resp.Eps.Docs)
+
+		if len(resp.Eps.Docs) != resp.Eps.Total {
+			return resp, fmt.Errorf("Episodes: len(resp.Eps.Docs)(%d) != resp.Eps.Total(%d)",
+				len(resp.Eps.Docs), resp.Eps.Total)
+		}
+	}
+
+	return resp, nil
 }
 
+// Pages 获取图片列表, page 可为 -1
 func Pages(ctx context.Context, bookId string, epId, page int) (*PagesResp, error) {
 	epId = max(epId, 1)
 	page = max(page, 1)
 
 	u := toUrl(API_URL)
-	u.Path = path.Join(API_COMICS, bookId, "order", strconv.Itoa(epId))
+	u.Path = path.Join(API_COMICS, bookId, "order", strconv.Itoa(epId), "pages")
+
 	q := u.Query()
 	q.Add("page", strconv.Itoa(page))
 	u.RawQuery = q.Encode()
-	return doApiAndDecodeTo[PagesResp](ctx, http.MethodGet, u.String(), nil)
+
+	resp, err := doApiAndDecodeTo[PagesResp](ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if page == -1 {
+		for page := 2; page <= resp.Pages.Pages; page++ {
+			r, err := Pages(ctx, bookId, epId, page)
+			if err != nil {
+				return resp, err
+			}
+			resp.append(r)
+		}
+		resp.Pages.Limit = len(resp.Pages.Docs)
+
+		if len(resp.Pages.Docs) != resp.Pages.Total {
+			return resp, fmt.Errorf("Pages: len(resp.Pages.Docs)(%d) != resp.Pages.Total(%d)",
+				len(resp.Pages.Docs), resp.Pages.Total)
+		}
+	}
+
+	return resp, nil
 }
 
 // Recommendation 看了這本子的人也在看
@@ -206,16 +259,39 @@ func Recommendation(ctx context.Context, bookId string) (*RecommendationResp, er
 	return doApiAndDecodeTo[RecommendationResp](ctx, http.MethodGet, u.String(), nil)
 }
 
-// Comments 偉論
+// Comments 偉論, page 可为 -1
 func Comments(ctx context.Context, bookId string, page int) (*CommentsResp, error) {
 	page = max(page, 1)
 
 	u := toUrl(API_URL)
 	u.Path = path.Join(API_COMICS, bookId, "comments")
+
 	q := u.Query()
 	q.Add("page", strconv.Itoa(page))
 	u.RawQuery = q.Encode()
-	return doApiAndDecodeTo[CommentsResp](ctx, http.MethodGet, u.String(), nil)
+
+	resp, err := doApiAndDecodeTo[CommentsResp](ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if page == -1 {
+		for page := 2; page <= resp.Comments.Pages; page++ {
+			r, err := Comments(ctx, bookId, page)
+			if err != nil {
+				return resp, err
+			}
+			resp.append(r)
+		}
+		resp.Comments.Limit = len(resp.Comments.Docs)
+
+		if len(resp.Comments.Docs) != resp.Comments.Total {
+			return resp, fmt.Errorf("Comments: len(resp.Comments.Docs)(%d) != resp.Comments.Total(%d)",
+				len(resp.Comments.Docs), resp.Comments.Total)
+		}
+	}
+
+	return resp, nil
 }
 
 // Like 讚好
@@ -246,19 +322,42 @@ func Categories(ctx context.Context) (*CategoriesResp, error) {
 	return doApiAndDecodeTo[CategoriesResp](ctx, http.MethodGet, u.String(), nil)
 }
 
-// UserFavourite 已收藏
+// UserFavourite 已收藏, page 可为 -1
 func UserFavourite(ctx context.Context, sort Sort, page int) (*UserFavouriteResp, error) {
 	if sort == "" {
 		sort = ORDER_DEFAULT
 	}
-	page = max(page, 1)
+	p := max(page, 1)
 
 	u := toUrl(API_URL)
 	u.Path = API_USERS_FAVOURITE
+
 	q := u.Query()
-	q.Add("page", strconv.Itoa(page))
+	q.Add("page", strconv.Itoa(p))
 	u.RawQuery = q.Encode()
-	return doApiAndDecodeTo[UserFavouriteResp](ctx, http.MethodGet, u.String(), nil)
+
+	resp, err := doApiAndDecodeTo[UserFavouriteResp](ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if page == -1 {
+		for page := 2; page <= resp.Comics.Pages; page++ {
+			r, err := UserFavourite(ctx, sort, page)
+			if err != nil {
+				return resp, err
+			}
+			resp.append(r)
+		}
+		resp.Comics.Limit = len(resp.Comics.Docs)
+
+		if len(resp.Comics.Docs) != resp.Comics.Total {
+			return resp, fmt.Errorf("UserFavourite: len(resp.Comics.Docs)(%d) != resp.Comics.Total(%d)",
+				len(resp.Comics.Docs), resp.Comics.Total)
+		}
+	}
+
+	return resp, nil
 }
 
 func DownloadCoversIter(ctx context.Context, search *SearchResp) iter.Seq2[Image, error] {

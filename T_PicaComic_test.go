@@ -29,7 +29,7 @@ func TestComics(t *testing.T) {
 }
 
 func TestComicInfo(t *testing.T) {
-	resp, err := ComicInfo(t.Context(), "682cca5d6f0cd54536b01fd6")
+	resp, err := ComicInfo(t.Context(), "630f6170c0b3ab7d08f3da8a")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestComicInfo(t *testing.T) {
 }
 
 func TestEpisodes(t *testing.T) {
-	resp, err := Episodes(t.Context(), "682cca5d6f0cd54536b01fd6", 0)
+	resp, err := Episodes(t.Context(), "630f6170c0b3ab7d08f3da8a", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestEpisodes(t *testing.T) {
 }
 
 func TestPages(t *testing.T) {
-	resp, err := Pages(t.Context(), "682cca5d6f0cd54536b01fd6", 1, 0)
+	resp, err := Pages(t.Context(), "630f6170c0b3ab7d08f3da8a", 1, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestPages(t *testing.T) {
 }
 
 func TestRecommendation(t *testing.T) {
-	resp, err := Recommendation(t.Context(), "682cca5d6f0cd54536b01fd6")
+	resp, err := Recommendation(t.Context(), "630f6170c0b3ab7d08f3da8a")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestSearch(t *testing.T) {
 }
 
 func TestLike(t *testing.T) {
-	resp, err := Like(t.Context(), "682cca5d6f0cd54536b01fd6")
+	resp, err := Like(t.Context(), "630f6170c0b3ab7d08f3da8a")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestLike(t *testing.T) {
 }
 
 func TestComments(t *testing.T) {
-	resp, err := Comments(t.Context(), "682cca5d6f0cd54536b01fd6", 0)
+	resp, err := Comments(t.Context(), "630f6170c0b3ab7d08f3da8a", 0)
 	if err != nil {
 	}
 	t.Logf("%+v", resp)
@@ -100,7 +100,7 @@ func TestComments(t *testing.T) {
 }
 
 func TestFavourite(t *testing.T) {
-	resp, err := Favourite(t.Context(), "682cca5d6f0cd54536b01fd6")
+	resp, err := Favourite(t.Context(), "630f6170c0b3ab7d08f3da8a")
 	if err != nil {
 		t.Fatal(err)
 	}
